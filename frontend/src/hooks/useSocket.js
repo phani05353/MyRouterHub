@@ -37,6 +37,7 @@ export function useSocket() {
   const historyRef  = useRef({});
   const [history, setHistory] = useState({});
   const seenMacs    = useRef(new Set());
+  const [wanRates, setWanRates] = useState({ rxRate: 0, txRate: 0 });
 
   const pushHistory = useCallback((clientList) => {
     const now = Date.now();
@@ -61,6 +62,8 @@ export function useSocket() {
       setRouterError(error);
     });
 
+    socket.on('wan', (data) => setWanRates(data));
+
     socket.on('clients', async (list) => {
       setClients(list);
 
@@ -78,5 +81,5 @@ export function useSocket() {
     return () => { socket.disconnect(); };
   }, [pushHistory]);
 
-  return { connected, routerConnected, routerError, clients, history };
+  return { connected, routerConnected, routerError, clients, history, wanRates };
 }

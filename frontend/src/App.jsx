@@ -4,7 +4,7 @@ import Dashboard from './components/Dashboard';
 import { useSocket } from './hooks/useSocket';
 
 export default function App() {
-  const { connected, routerConnected, routerError, clients, history } = useSocket();
+  const { connected, routerConnected, routerError, clients, history, wanRates } = useSocket();
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -15,6 +15,7 @@ export default function App() {
           history={history}
           routerConnected={routerConnected}
           routerError={routerError}
+          wanRates={wanRates}
         />
       </main>
     </div>

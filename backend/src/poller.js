@@ -5,7 +5,8 @@ const db = require('./db');
 
 const POLL_INTERVAL_MS = 2000;   // Real-time poll: every 2s
 const HISTORY_INTERVAL_MS = 60000; // Write history: every 60s
-const RATE_SMOOTH_SAMPLES = 10;  // Rolling average over last 10 polls (~20s) — matches router's averaging window
+const RATE_SMOOTH_SAMPLES = 3;   // Rolling average over last 3 polls (~6s) — minimal smoothing to reduce lag
+const WAN_POLL_EVERY = 5;        // Poll WAN stats every 5 polls (~10s)
 
 class Poller {
   constructor(config, emitter) {
@@ -16,6 +17,8 @@ class Poller {
     this._sessionTotals = {}; // mac → { rxBytes, txBytes } — accumulated since start
     this._rateBuffer = {};   // mac → { rx: number[], tx: number[] } — rolling window for smoothing
     this._accumulator = {};  // mac → { rxRate[], txRate[], rxBytes, txBytes }
+    this._prevWan = null;    // { rx, tx, ts } — for WAN rate computation
+    this._wanCounter = 0;   // poll counter for WAN throttling
     this._historyTimer = null;
     this._pollTimer = null;
     this.lastError = null;
@@ -66,6 +69,13 @@ class Poller {
       });
 
       this.emit('clients', enriched);
+
+      // Poll WAN stats every WAN_POLL_EVERY polls (~10s) — avoids hammering router
+      this._wanCounter++;
+      if (this._wanCounter >= WAN_POLL_EVERY) {
+        this._wanCounter = 0;
+        this._pollWan(now);
+      }
     } catch (err) {
       this.lastError = err.message;
       if (this.connected) {
@@ -77,6 +87,29 @@ class Poller {
     if (this.running) {
       this._pollTimer = setTimeout(() => this._poll(), POLL_INTERVAL_MS);
     }
+  }
+
+  /**
+   * Fetch WAN (internet) cumulative byte counters and diff to get current rate.
+   * Emits { rxRate, txRate } in bytes/s for the WAN interface.
+   */
+  async _pollWan(now) {
+    try {
+      const wan = await this.client.getNetDev();
+      const prev = this._prevWan;
+      let rxRate = 0, txRate = 0;
+
+      if (prev && wan.wanRx >= prev.rx && wan.wanTx >= prev.tx) {
+        const dt = (now - prev.ts) / 1000;
+        if (dt > 0) {
+          rxRate = (wan.wanRx - prev.rx) / dt;
+          txRate = (wan.wanTx - prev.tx) / dt;
+        }
+      }
+
+      this._prevWan = { rx: wan.wanRx, tx: wan.wanTx, ts: now };
+      this.emit('wan', { rxRate, txRate });
+    } catch (_) { /* WAN stats optional — don't break polling */ }
   }
 
   /**

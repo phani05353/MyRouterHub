@@ -21,7 +21,7 @@ function savePinned(set) {
   localStorage.setItem(PINNED_KEY, JSON.stringify([...set]));
 }
 
-export default function Dashboard({ clients, history, routerConnected, routerError }) {
+export default function Dashboard({ clients, history, routerConnected, routerError, wanRates }) {
   const [sort, setSort]     = useState('rx');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
@@ -88,7 +88,7 @@ export default function Dashboard({ clients, history, routerConnected, routerErr
   return (
     <div className="p-5 max-w-7xl mx-auto space-y-5">
       {/* Total bandwidth widget */}
-      <TotalBandwidth clients={clients} history={history} />
+      <TotalBandwidth clients={clients} history={history} wanRates={wanRates} />
 
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">

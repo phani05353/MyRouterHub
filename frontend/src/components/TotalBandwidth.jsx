@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { formatRate } from '../utils/formatBytes';
 
-export default function TotalBandwidth({ clients, history }) {
+export default function TotalBandwidth({ clients, history, wanRates }) {
   const aggregated = useMemo(() => {
     if (!history || Object.keys(history).length === 0) return [];
 
@@ -23,6 +23,9 @@ export default function TotalBandwidth({ clients, history }) {
   const totalRx = clients.reduce((s, c) => s + (c.rxRate || 0), 0);
   const totalTx = clients.reduce((s, c) => s + (c.txRate || 0), 0);
   const activeDevices = clients.filter((c) => (c.rxRate || 0) + (c.txRate || 0) > 1024).length;
+  const wanRx = wanRates?.rxRate || 0;
+  const wanTx = wanRates?.txRate || 0;
+  const hasWan = wanRx > 0 || wanTx > 0;
 
   return (
     <div className="bg-surface-card border border-surface-border rounded-2xl p-4 overflow-hidden relative">
@@ -31,9 +34,9 @@ export default function TotalBandwidth({ clients, history }) {
 
       <div className="relative">
         {/* Header row */}
-        <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-1">Total Network Traffic</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-1">LAN Traffic <span className="normal-case text-slate-600">(all devices)</span></p>
             <div className="flex items-baseline gap-4">
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-bold font-mono text-rx">{formatRate(totalRx)}</span>
@@ -49,6 +52,21 @@ export default function TotalBandwidth({ clients, history }) {
             <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Active</p>
             <p className="text-lg font-bold text-slate-200">{activeDevices}<span className="text-xs text-slate-500 font-normal ml-1">/ {clients.length}</span></p>
           </div>
+        </div>
+
+        {/* WAN internet row */}
+        <div className="flex items-center gap-3 mb-3 py-2 px-3 bg-surface-muted/20 border border-surface-border/40 rounded-xl">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <svg className="w-3 h-3 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" strokeLinecap="round"/>
+            </svg>
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Internet (WAN)</span>
+          </div>
+          <div className="flex items-baseline gap-3 font-mono text-sm">
+            <span className={hasWan ? 'text-rx' : 'text-slate-600'}>↓ {formatRate(wanRx)}</span>
+            <span className={hasWan ? 'text-tx' : 'text-slate-600'}>↑ {formatRate(wanTx)}</span>
+          </div>
+          {!hasWan && <span className="text-[10px] text-slate-600 italic ml-auto">updating…</span>}
         </div>
 
         {/* Chart */}

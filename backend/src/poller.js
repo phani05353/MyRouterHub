@@ -12,6 +12,7 @@ class Poller {
     this.emit = emitter;     // fn(event, data)
     this.running = false;
     this._prevBytes = {};    // mac → { rx, tx, ts }
+    this._sessionTotals = {}; // mac → { rxBytes, txBytes } — accumulated since start
     this._accumulator = {};  // mac → { rxRate[], txRate[], rxBytes, txBytes }
     this._historyTimer = null;
     this._pollTimer = null;
@@ -100,7 +101,25 @@ class Poller {
 
     this._prevBytes[mac] = { rx: client.totalRx, tx: client.totalTx, ts: now };
 
-    return { ...client, rxRate, txRate };
+    // Accumulate session totals from rates when router doesn't provide totalRx/totalTx
+    if (!this._sessionTotals[mac]) {
+      this._sessionTotals[mac] = { rxBytes: client.totalRx, txBytes: client.totalTx };
+    }
+    if (client.totalRx > 0) {
+      // Router provides real totals — use them
+      this._sessionTotals[mac].rxBytes = client.totalRx;
+      this._sessionTotals[mac].txBytes = client.totalTx;
+    } else if (prev) {
+      // Integrate rate over elapsed time
+      const dt = (now - prev.ts) / 1000;
+      this._sessionTotals[mac].rxBytes += rxRate * dt;
+      this._sessionTotals[mac].txBytes += txRate * dt;
+    }
+
+    const totalRx = this._sessionTotals[mac].rxBytes;
+    const totalTx = this._sessionTotals[mac].txBytes;
+
+    return { ...client, rxRate, txRate, totalRx, totalTx };
   }
 
   _flushHistory() {

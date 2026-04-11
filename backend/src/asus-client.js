@@ -239,10 +239,12 @@ class AsusClient {
           ip:      c.ip      || '',
           name:    c.nickName || c.name || c.dpiDevice || c.ip || mac,
           isOnline: online,
-          curRx:   parseFloat(c.curRx)   || 0,
-          curTx:   parseFloat(c.curTx)   || 0,
-          totalRx: parseFloat(c.totalRx) || 0,
-          totalTx: parseFloat(c.totalTx) || 0,
+          // Router reports curRx/curTx in KB/s — convert to bytes/s
+          curRx:   (parseFloat(c.curRx)   || 0) * 1024,
+          curTx:   (parseFloat(c.curTx)   || 0) * 1024,
+          // Router reports totalRx/totalTx in KB — convert to bytes (often 0 on some firmware)
+          totalRx: (parseFloat(c.totalRx) || 0) * 1024,
+          totalTx: (parseFloat(c.totalTx) || 0) * 1024,
           vendor:  c.vendor || '',
           type:    c.type   || '0',  // '0'=wired '1'=2.4G '2'=5G '3'=6G
           rssi:    c.rssi   || '',

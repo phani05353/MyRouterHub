@@ -3,27 +3,29 @@
 const AsusClient = require('./asus-client');
 const db = require('./db');
 
-const POLL_INTERVAL_MS = 2000;    // Real-time poll: every 2s
-const HISTORY_INTERVAL_MS = 60000; // Write history: every 60s
-const RATE_SMOOTH_SAMPLES = 3;    // Rolling average over 3 polls (~6s) — only smooths; accuracy comes from _lastTotalChange
-const WAN_POLL_EVERY = 5;         // Poll WAN stats every 5 polls (~10s)
+const POLL_INTERVAL_MS = 2000;     // Real-time poll: every 2s
+const HISTORY_INTERVAL_MS = 60000;  // Write history: every 60s
+const RATE_SMOOTH_SAMPLES = 2;     // 2-sample smoothing (~4s) — minimal noise reduction
+const WAN_POLL_EVERY = 5;          // Poll WAN stats every 5 polls (~10s)
 
 class Poller {
   constructor(config, emitter) {
     this.client = new AsusClient(config);
-    this.emit = emitter;           // fn(event, data)
+    this.emit = emitter;
     this.running = false;
-    this._prevBytes = {};          // mac → { rx, tx, ts }
-    this._sessionTotals = {};      // mac → { rxBytes, txBytes }
-    this._rateBuffer = {};         // mac → { rx: number[], tx: number[] }
-    this._accumulator = {};        // mac → { rxRates[], txRates[], rxBytes, txBytes }
-    this._lastTotalChange = {};    // mac → { rx, tx, ts, rxRate, txRate }
-                                   //   tracks when totalRx actually updates so we can
-                                   //   compute avg rate over the REAL TA interval, not our 2s poll
-    this._prevWan = null;          // { rx, tx, ts }
-    this._wanCounter = WAN_POLL_EVERY - 1; // trigger WAN poll on very first cycle
-    this._historyTimer = null;
-    this._pollTimer = null;
+
+    // Session tracking: remember the first totalRx we saw for each device, so
+    // "Total Downloaded" shows bytes since RouterHub started watching this device
+    // — NOT the router's lifetime counter (which is always much larger).
+    this._sessionBase   = {};     // mac → { baseRx, baseTx }
+    this._rateBuffer    = {};     // mac → { rx: number[], tx: number[] }
+    this._accumulator   = {};     // mac → { rxRates[], txRates[], rxBytes, txBytes }
+    this._prevBytes     = {};     // mac → { rx, tx, ts } — for rate fallback when curRx=0
+    this._prevWan       = null;   // { rx, tx, ts }
+    this._wanCounter    = WAN_POLL_EVERY - 1; // WAN poll fires on first cycle
+
+    this._historyTimer  = null;
+    this._pollTimer     = null;
     this.lastError = null;
     this.connected = false;
   }
@@ -53,13 +55,11 @@ class Poller {
         this.emit('status', { connected: true, error: null });
       }
 
-      // Upsert devices
       db.upsertDevices(clients);
 
       const now = Date.now();
       const enriched = clients.map((c) => this._computeRates(c, now));
 
-      // Accumulate for history flush — use rawRxRate/rawTxRate (pre-smooth)
       enriched.forEach((c) => {
         if (!this._accumulator[c.mac]) {
           this._accumulator[c.mac] = { rxRates: [], txRates: [], rxBytes: 0, txBytes: 0 };
@@ -73,7 +73,6 @@ class Poller {
 
       this.emit('clients', enriched);
 
-      // Poll WAN stats every WAN_POLL_EVERY polls
       this._wanCounter++;
       if (this._wanCounter >= WAN_POLL_EVERY) {
         this._wanCounter = 0;
@@ -92,15 +91,12 @@ class Poller {
     }
   }
 
-  // ─── WAN ─────────────────────────────────────────────────────────────────────
+  // ─── WAN polling ─────────────────────────────────────────────────────────────
 
   async _pollWan(now) {
     try {
       const wan = await this.client.getNetDev();
-      if (wan.wanRx === 0 && wan.wanTx === 0) {
-        // Either no WAN data or initial state — don't update prevWan yet
-        if (!this._prevWan) return;
-      }
+      if (wan.wanRx === 0 && wan.wanTx === 0 && !this._prevWan) return;
 
       const prev = this._prevWan;
       let rxRate = 0, txRate = 0;
@@ -123,82 +119,58 @@ class Poller {
   // ─── Per-device rate computation ─────────────────────────────────────────────
 
   /**
-   * Compute bandwidth rates accurately by tracking when totalRx byte counters
-   * actually change (ASUS Traffic Analyzer update cycle, typically 30-120s).
+   * RATES: use the router's own curRx/curTx directly.
+   *   These are the same values shown in the router's Traffic Analyzer UI,
+   *   so RouterHub's per-device rates match the router's display by construction.
+   *   Only fall back to totalRx diff when curRx/curTx aren't provided.
    *
-   * Naive approach (previous): diff totalRx against 2s-ago value → 0 for 29 polls,
-   * then a 30× spike when TA updates. This approach instead divides the byte diff
-   * by the actual elapsed time since the last TA update, giving the true average rate.
-   *
-   * Falls back to curRx/curTx (TA's pre-averaged rate) when totalRx is unavailable.
+   * TOTALS: show delta since RouterHub first saw the device — NOT the router's
+   *   lifetime counter. The router's counter accumulates since the device first
+   *   connected (or Traffic Analyzer was enabled), which is always much larger
+   *   than what the user expects from any rolling-window view in the router UI.
    */
   _computeRates(client, now) {
     const mac = client.mac;
-    const prev = this._prevBytes[mac]; // used only for session-total fallback
+    const prev = this._prevBytes[mac];
 
-    let rxRate, txRate;
+    // ── Rates: trust the router's curRx/curTx (matches router UI) ──
+    let rxRate = client.curRx || 0;
+    let txRate = client.curTx || 0;
 
-    if (client.totalRx > 0) {
-      const last = this._lastTotalChange[mac];
-
-      if (!last) {
-        // First time — seed with TA's estimate
-        rxRate = client.curRx || 0;
-        txRate = client.curTx || 0;
-        this._lastTotalChange[mac] = { rx: client.totalRx, tx: client.totalTx, ts: now, rxRate, txRate };
-
-      } else if (client.totalRx !== last.rx || client.totalTx !== last.tx) {
-        // Byte counters changed — compute true average rate over the actual TA interval
-        const elapsed = (now - last.ts) / 1000;
-        if (elapsed >= 1) {
-          rxRate = Math.max(0, (client.totalRx - last.rx) / elapsed);
-          txRate = Math.max(0, (client.totalTx - last.tx) / elapsed);
-        } else {
-          rxRate = last.rxRate;
-          txRate = last.txRate;
-        }
-        this._lastTotalChange[mac] = { rx: client.totalRx, tx: client.totalTx, ts: now, rxRate, txRate };
-
-      } else {
-        // Counters unchanged — TA hasn't updated yet; hold last computed rate
-        rxRate = last.rxRate;
-        txRate = last.txRate;
+    // Fallback only when the router doesn't provide curRx/curTx — derive from
+    // the cumulative counter diff over the 2s poll interval.
+    if (rxRate === 0 && txRate === 0 && client.totalRx > 0 && prev) {
+      const dt = (now - prev.ts) / 1000;
+      if (dt > 0) {
+        rxRate = Math.max(0, (client.totalRx - prev.rx) / dt);
+        txRate = Math.max(0, (client.totalTx - prev.tx) / dt);
       }
-
-      // Trust the TA explicitly reporting zero (device went idle)
-      if (client.curRx === 0 && client.curTx === 0) {
-        rxRate = 0;
-        txRate = 0;
-        // Keep _lastTotalChange so we don't spike if traffic resumes
-        this._lastTotalChange[mac] = { ...this._lastTotalChange[mac], rxRate: 0, txRate: 0 };
-      }
-    } else {
-      // No byte counters (some firmware) — use TA's pre-averaged rates
-      rxRate = client.curRx || 0;
-      txRate = client.curTx || 0;
     }
 
     this._prevBytes[mac] = { rx: client.totalRx, tx: client.totalTx, ts: now };
 
-    // ─── Session totals ──────────────────────────────────────────────────────
-    // Use router's totalRx directly when available (most accurate).
-    // Fallback: integrate raw rate × dt when totalRx is 0.
-    if (!this._sessionTotals[mac]) {
-      this._sessionTotals[mac] = { rxBytes: client.totalRx, txBytes: client.totalTx };
+    // ── Totals: delta since RouterHub started watching this device ──
+    if (!this._sessionBase[mac]) {
+      this._sessionBase[mac] = {
+        baseRx: client.totalRx || 0,
+        baseTx: client.totalTx || 0,
+      };
     }
+    const base = this._sessionBase[mac];
+
+    // Detect counter reset (device reconnected or router rebooted) and rebase
+    if (client.totalRx > 0 && client.totalRx < base.baseRx) {
+      base.baseRx = client.totalRx;
+      base.baseTx = client.totalTx;
+    }
+
+    let totalRx = 0, totalTx = 0;
     if (client.totalRx > 0) {
-      this._sessionTotals[mac].rxBytes = client.totalRx;
-      this._sessionTotals[mac].txBytes = client.totalTx;
-    } else if (prev) {
-      const dt = (now - prev.ts) / 1000;
-      this._sessionTotals[mac].rxBytes += rxRate * dt;
-      this._sessionTotals[mac].txBytes += txRate * dt;
+      totalRx = Math.max(0, client.totalRx - base.baseRx);
+      totalTx = Math.max(0, client.totalTx - base.baseTx);
     }
 
-    const totalRx = this._sessionTotals[mac].rxBytes;
-    const totalTx = this._sessionTotals[mac].txBytes;
-
-    // ─── Smoothing (display only) ───────────────────────────────────────────
+    // ── Light smoothing for display stability only ──
     if (!this._rateBuffer[mac]) this._rateBuffer[mac] = { rx: [], tx: [] };
     const buf = this._rateBuffer[mac];
     buf.rx.push(rxRate);
@@ -208,7 +180,15 @@ class Poller {
     const smoothRx = buf.rx.reduce((a, b) => a + b, 0) / buf.rx.length;
     const smoothTx = buf.tx.reduce((a, b) => a + b, 0) / buf.tx.length;
 
-    return { ...client, rxRate: smoothRx, txRate: smoothTx, rawRxRate: rxRate, rawTxRate: txRate, totalRx, totalTx };
+    return {
+      ...client,
+      rxRate: smoothRx,
+      txRate: smoothTx,
+      rawRxRate: rxRate,
+      rawTxRate: txRate,
+      totalRx,
+      totalTx,
+    };
   }
 
   // ─── History flush ────────────────────────────────────────────────────────────
@@ -227,7 +207,6 @@ class Poller {
     }
     this._accumulator = {};
 
-    // Prune once a day (check midnight ± 1min)
     const h = new Date().getHours(), m = new Date().getMinutes();
     if (h === 0 && m === 0) db.pruneOldData(30);
   }

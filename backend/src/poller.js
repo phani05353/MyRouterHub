@@ -5,6 +5,7 @@ const db = require('./db');
 
 const POLL_INTERVAL_MS = 2000;   // Real-time poll: every 2s
 const HISTORY_INTERVAL_MS = 60000; // Write history: every 60s
+const RATE_SMOOTH_SAMPLES = 10;  // Rolling average over last 10 polls (~20s) — matches router's averaging window
 
 class Poller {
   constructor(config, emitter) {
@@ -13,6 +14,7 @@ class Poller {
     this.running = false;
     this._prevBytes = {};    // mac → { rx, tx, ts }
     this._sessionTotals = {}; // mac → { rxBytes, txBytes } — accumulated since start
+    this._rateBuffer = {};   // mac → { rx: number[], tx: number[] } — rolling window for smoothing
     this._accumulator = {};  // mac → { rxRate[], txRate[], rxBytes, txBytes }
     this._historyTimer = null;
     this._pollTimer = null;
@@ -100,6 +102,16 @@ class Poller {
     }
 
     this._prevBytes[mac] = { rx: client.totalRx, tx: client.totalTx, ts: now };
+
+    // Smooth rates using a rolling average over the last N samples
+    if (!this._rateBuffer[mac]) this._rateBuffer[mac] = { rx: [], tx: [] };
+    const buf = this._rateBuffer[mac];
+    buf.rx.push(rxRate);
+    buf.tx.push(txRate);
+    if (buf.rx.length > RATE_SMOOTH_SAMPLES) buf.rx.shift();
+    if (buf.tx.length > RATE_SMOOTH_SAMPLES) buf.tx.shift();
+    rxRate = buf.rx.reduce((a, b) => a + b, 0) / buf.rx.length;
+    txRate = buf.tx.reduce((a, b) => a + b, 0) / buf.tx.length;
 
     // Accumulate session totals from rates when router doesn't provide totalRx/totalTx
     if (!this._sessionTotals[mac]) {

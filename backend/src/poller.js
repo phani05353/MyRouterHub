@@ -22,6 +22,7 @@ class Poller {
     this._accumulator   = {};     // mac → { rxRates[], txRates[], rxBytes, txBytes }
     this._prevBytes     = {};     // mac → { rx, tx, ts } — for rate fallback when curRx=0
     this._prevWan       = null;   // { rx, tx, ts }
+    this._wanPolling    = false;  // guard: prevent concurrent _pollWan calls
     this._wanCounter    = WAN_POLL_EVERY - 1; // WAN poll fires on first cycle
 
     this._historyTimer  = null;
@@ -76,7 +77,7 @@ class Poller {
       this._wanCounter++;
       if (this._wanCounter >= WAN_POLL_EVERY) {
         this._wanCounter = 0;
-        this._pollWan(now);
+        this._pollWan();
       }
     } catch (err) {
       this.lastError = err.message;
@@ -93,26 +94,39 @@ class Poller {
 
   // ─── WAN polling ─────────────────────────────────────────────────────────────
 
-  async _pollWan(now) {
+  async _pollWan() {
+    // Guard: skip if a previous WAN poll is still in flight (router slow to respond)
+    if (this._wanPolling) return;
+    this._wanPolling = true;
+
     try {
       const wan = await this.client.getNetDev();
+      // Capture timestamp AFTER the API call resolves — this is when the counter
+      // value was actually read. Using a pre-call timestamp would shrink dt and
+      // overstate the rate.
+      const wanTs = Date.now();
+
       if (wan.wanRx === 0 && wan.wanTx === 0 && !this._prevWan) return;
 
       const prev = this._prevWan;
       let rxRate = 0, txRate = 0;
 
-      if (prev && wan.wanRx >= prev.rx && wan.wanTx >= prev.tx) {
-        const dt = (now - prev.ts) / 1000;
+      if (prev) {
+        const dt = (wanTs - prev.ts) / 1000;
         if (dt > 0) {
-          rxRate = (wan.wanRx - prev.rx) / dt;
-          txRate = (wan.wanTx - prev.tx) / dt;
+          // Compute each direction independently — one counter resetting shouldn't
+          // suppress the other
+          rxRate = wan.wanRx >= prev.rx ? (wan.wanRx - prev.rx) / dt : 0;
+          txRate = wan.wanTx >= prev.tx ? (wan.wanTx - prev.tx) / dt : 0;
         }
       }
 
-      this._prevWan = { rx: wan.wanRx, tx: wan.wanTx, ts: now };
+      this._prevWan = { rx: wan.wanRx, tx: wan.wanTx, ts: wanTs };
       this.emit('wan', { rxRate, txRate });
     } catch (err) {
       console.error('[poller] WAN poll failed:', err.message);
+    } finally {
+      this._wanPolling = false;
     }
   }
 

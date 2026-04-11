@@ -249,16 +249,16 @@ class AsusClient {
           ip:      c.ip      || '',
           name:    c.nickName || c.name || c.dpiDevice || c.ip || mac,
           isOnline: online,
-          // Router reports curRx/curTx in Kbps (kilobits/s) from the router's perspective:
-          //   curRx = router receives from device = device upload
-          //   curTx = router transmits to device  = device download
-          // We flip them so curRx = device download, curTx = device upload
+          // ASUS Traffic Analyzer uses DEVICE-centric naming:
+          //   curRx = bytes the device receives = device download
+          //   curTx = bytes the device transmits = device upload
+          // (Confirmed: Nest camera shows curTx≫curRx, which matches upload-heavy behavior.)
           // Convert Kbps → bytes/s: × 1000 ÷ 8 = × 125
-          curRx:   (parseFloat(c.curTx)   || 0) * 125,  // device download
-          curTx:   (parseFloat(c.curRx)   || 0) * 125,  // device upload
-          // totalRx/totalTx are in KB — convert to bytes (often 0 on some firmware)
-          totalRx: (parseFloat(c.totalTx) || 0) * 1024,
-          totalTx: (parseFloat(c.totalRx) || 0) * 1024,
+          curRx:   (parseFloat(c.curRx)   || 0) * 125,  // device download
+          curTx:   (parseFloat(c.curTx)   || 0) * 125,  // device upload
+          // totalRx/totalTx are in KB — always empty on ZenWiFi AX6600 firmware
+          totalRx: (parseFloat(c.totalRx) || 0) * 1024,
+          totalTx: (parseFloat(c.totalTx) || 0) * 1024,
           vendor:  c.vendor || '',
           connectionType,           // 'wired' | 'wifi' | 'mesh'
           type:    c.type   || '0', // ASUS device category code (not band)

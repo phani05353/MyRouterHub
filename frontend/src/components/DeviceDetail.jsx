@@ -118,18 +118,15 @@ function DailyChart({ mac }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const now = Math.floor(Date.now() / 1000);
-    const start = now - range.days * 86400;
-    // Fetch with 1-day buckets
-    fetch(`/api/devices/${mac}/history?start=${start}&end=${now}&bucket=86400`)
+    fetch(`/api/devices/${mac}/daily?days=${range.days}`)
       .then((r) => r.json())
       .then((rows) => {
         if (cancelled) return;
-        // Estimate daily bytes from average rate × bucket duration
+        // rxBytes/txBytes = SUM(rate) * 60s per sample — convert to MB
         const formatted = rows.map((d) => ({
-          date: formatDate(d.bucket),
-          rxMB: parseFloat(((d.avgRxRate * 86400) / (1024 * 1024)).toFixed(1)),
-          txMB: parseFloat(((d.avgTxRate * 86400) / (1024 * 1024)).toFixed(1)),
+          date: formatDate(d.day),
+          rxMB: parseFloat((d.rxBytes / (1024 * 1024)).toFixed(1)),
+          txMB: parseFloat((d.txBytes / (1024 * 1024)).toFixed(1)),
         }));
         setData(formatted);
       })

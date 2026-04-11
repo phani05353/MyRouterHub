@@ -2,6 +2,7 @@
 
 const express = require('express');
 const db = require('../db');
+
 const router = express.Router();
 
 // GET /api/devices — all known devices
@@ -25,6 +26,18 @@ router.get('/:mac/history', (req, res) => {
 
     const history = db.getDeviceHistory(mac.toUpperCase(), start, end, bucket);
     res.json(history);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/devices/:mac/daily?days=7
+router.get('/:mac/daily', (req, res) => {
+  try {
+    const { mac } = req.params;
+    const days = parseInt(req.query.days) || 7;
+    const data = db.getDeviceDailyUsage(mac.toUpperCase(), days);
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

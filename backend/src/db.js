@@ -132,6 +132,26 @@ function getTopDevices(startTs, endTs, limit = 20) {
 }
 
 /**
+ * Get daily usage totals for a device.
+ * Each history record represents ~60s of data, so bytes = SUM(rate) * 60.
+ */
+function getDeviceDailyUsage(mac, days = 7) {
+  const endTs   = Math.floor(Date.now() / 1000);
+  const startTs = endTs - days * 86400;
+  return db.prepare(`
+    SELECT
+      (ts / 86400 * 86400) AS day,
+      SUM(rx_rate) * 60    AS rxBytes,
+      SUM(tx_rate) * 60    AS txBytes,
+      COUNT(*)             AS samples
+    FROM usage_history
+    WHERE mac = @mac AND ts BETWEEN @start AND @end
+    GROUP BY day
+    ORDER BY day ASC
+  `).all({ mac, start: startTs, end: endTs });
+}
+
+/**
  * Prune records older than retentionDays.
  */
 function pruneOldData(retentionDays = 30) {
@@ -140,4 +160,4 @@ function pruneOldData(retentionDays = 30) {
   return info.changes;
 }
 
-module.exports = { upsertDevices, getAllDevices, getDevice, recordUsage, getDeviceHistory, getTopDevices, pruneOldData };
+module.exports = { upsertDevices, getAllDevices, getDevice, recordUsage, getDeviceHistory, getDeviceDailyUsage, getTopDevices, pruneOldData };

@@ -9,17 +9,17 @@
     color: #f1f5f9;
   }
 
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #181c25; }
-  ::-webkit-scrollbar-thumb { background: #2e3447; border-radius: 3px; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2e3447; border-radius: 99px; }
   ::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
 }
 
 @layer components {
   .card {
-    @apply bg-surface-card border border-surface-border rounded-xl p-4;
+    @apply bg-surface-card border border-surface-border rounded-2xl p-4;
   }
   .badge {
-    @apply inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium;
+    @apply inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border;
   }
 }

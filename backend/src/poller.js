@@ -53,14 +53,14 @@ class Poller {
       const now = Date.now();
       const enriched = clients.map((c) => this._computeRates(c, now));
 
-      // Accumulate for history flush
+      // Accumulate for history flush — use rawRxRate/rawTxRate to avoid smoothing inflation
       enriched.forEach((c) => {
         if (!this._accumulator[c.mac]) {
           this._accumulator[c.mac] = { rxRates: [], txRates: [], rxBytes: 0, txBytes: 0 };
         }
         const acc = this._accumulator[c.mac];
-        acc.rxRates.push(c.rxRate);
-        acc.txRates.push(c.txRate);
+        acc.rxRates.push(c.rawRxRate);
+        acc.txRates.push(c.rawTxRate);
         if (c.totalRx > acc.rxBytes) acc.rxBytes = c.totalRx;
         if (c.totalTx > acc.txBytes) acc.txBytes = c.totalTx;
       });
@@ -103,26 +103,16 @@ class Poller {
 
     this._prevBytes[mac] = { rx: client.totalRx, tx: client.totalTx, ts: now };
 
-    // Smooth rates using a rolling average over the last N samples
-    if (!this._rateBuffer[mac]) this._rateBuffer[mac] = { rx: [], tx: [] };
-    const buf = this._rateBuffer[mac];
-    buf.rx.push(rxRate);
-    buf.tx.push(txRate);
-    if (buf.rx.length > RATE_SMOOTH_SAMPLES) buf.rx.shift();
-    if (buf.tx.length > RATE_SMOOTH_SAMPLES) buf.tx.shift();
-    rxRate = buf.rx.reduce((a, b) => a + b, 0) / buf.rx.length;
-    txRate = buf.tx.reduce((a, b) => a + b, 0) / buf.tx.length;
-
-    // Accumulate session totals from rates when router doesn't provide totalRx/totalTx
+    // Accumulate session totals using RAW rates (before smoothing)
+    // Using smoothed rates here would inflate totals as decaying averages
+    // keep adding phantom bytes after a burst ends
     if (!this._sessionTotals[mac]) {
       this._sessionTotals[mac] = { rxBytes: client.totalRx, txBytes: client.totalTx };
     }
     if (client.totalRx > 0) {
-      // Router provides real totals — use them
       this._sessionTotals[mac].rxBytes = client.totalRx;
       this._sessionTotals[mac].txBytes = client.totalTx;
     } else if (prev) {
-      // Integrate rate over elapsed time
       const dt = (now - prev.ts) / 1000;
       this._sessionTotals[mac].rxBytes += rxRate * dt;
       this._sessionTotals[mac].txBytes += txRate * dt;
@@ -131,7 +121,17 @@ class Poller {
     const totalRx = this._sessionTotals[mac].rxBytes;
     const totalTx = this._sessionTotals[mac].txBytes;
 
-    return { ...client, rxRate, txRate, totalRx, totalTx };
+    // Smooth rates for display only — keeps UI stable without inflating totals
+    if (!this._rateBuffer[mac]) this._rateBuffer[mac] = { rx: [], tx: [] };
+    const buf = this._rateBuffer[mac];
+    buf.rx.push(rxRate);
+    buf.tx.push(txRate);
+    if (buf.rx.length > RATE_SMOOTH_SAMPLES) buf.rx.shift();
+    if (buf.tx.length > RATE_SMOOTH_SAMPLES) buf.tx.shift();
+    const smoothRx = buf.rx.reduce((a, b) => a + b, 0) / buf.rx.length;
+    const smoothTx = buf.tx.reduce((a, b) => a + b, 0) / buf.tx.length;
+
+    return { ...client, rxRate: smoothRx, txRate: smoothTx, rawRxRate: rxRate, rawTxRate: txRate, totalRx, totalTx };
   }
 
   _flushHistory() {

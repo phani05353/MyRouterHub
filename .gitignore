@@ -1,0 +1,19 @@
+# Environment
+.env
+
+# OpenWolf
+.wolf/
+
+# Claude Code
+.claude/
+
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+backend/public/
+
+# Logs
+*.log
+npm-debug.log*

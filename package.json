@@ -1,0 +1,19 @@
+{
+  "name": "routerhub",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "start": "npm start --prefix backend",
+    "build": "npm run build --prefix frontend",
+    "docker:build": "docker build -t routerhub .",
+    "docker:run": "docker run -d --name routerhub --restart unless-stopped -p 3001:3001 --env-file .env -v routerhub-data:/app/data routerhub",
+    "docker:stop": "docker stop routerhub && docker rm routerhub",
+    "docker:logs": "docker logs -f routerhub",
+    "docker:restart": "npm run docker:stop && npm run docker:run"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

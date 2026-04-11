@@ -45,15 +45,13 @@ else
   git clone "$REPO_URL" "$APP_DIR"
 fi
 
-# ── 3. Copy .env ───────────────────────────────────────────────────────────────
-echo "==> Copying .env..."
-if [ -f "$HOME/.env.myrouterhub" ]; then
-  cp "$HOME/.env.myrouterhub" "$APP_DIR/.env"
-elif [ ! -f "$APP_DIR/.env" ]; then
+# ── 3. Check .env exists ───────────────────────────────────────────────────────
+echo "==> Checking .env..."
+if [ ! -f "$APP_DIR/.env" ]; then
   echo ""
-  echo "ERROR: No .env file found."
-  echo "  Run: cp $APP_DIR/.env.example ~/.env.myrouterhub"
-  echo "  Then edit ~/.env.myrouterhub with your router credentials and re-run this script."
+  echo "ERROR: No .env file found in $APP_DIR"
+  echo "  Run: cp $APP_DIR/.env.example $APP_DIR/.env"
+  echo "  Then edit $APP_DIR/.env with your router credentials and re-run this script."
   exit 1
 fi
 

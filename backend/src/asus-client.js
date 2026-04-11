@@ -272,33 +272,37 @@ class AsusClient {
   }
 
   async getNetDev() {
-    const data = await this.appGet('netdev(appobj)');
-    const nd = data.netdev || data;
+    const raw  = await this.appGet('netdev(appobj)');
+    const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
 
-    // Some firmware returns values as decimal strings, others as hex ("0x7a3b...").
-    // parseFloat("0x1234") = 0 in JS — must handle hex explicitly.
-    function parseNetBytes(val) {
-      if (val == null || val === '') return 0;
-      const s = String(val).trim();
-      if (s.startsWith('0x') || s.startsWith('0X')) return parseInt(s, 16) || 0;
-      return parseFloat(s) || 0;
+    // ASUS firmware returns a JS-literal-style object (NOT valid JSON), e.g.
+    //   {BRIDGE:{rx:0x58815c423,tx:0xdc7...},INTERNET:{rx:0xdbc25cf54,tx:0x5949...},...}
+    // JSON.parse fails on it, so appGet hands us the raw string. Regex out
+    // INTERNET.rx / INTERNET.tx — cumulative byte counters, usually hex.
+    const m = text.match(/INTERNET\s*:\s*\{\s*rx\s*:\s*(0x[0-9a-fA-F]+|\d+)\s*,\s*tx\s*:\s*(0x[0-9a-fA-F]+|\d+)/);
+    if (m) {
+      const parseVal = (s) => (s.startsWith('0x') ? parseInt(s, 16) : parseInt(s, 10)) || 0;
+      return { wanRx: parseVal(m[1]), wanTx: parseVal(m[2]) };
     }
 
-    // Try all field name conventions seen across ASUS firmware versions.
-    // INTERNET_rx/tx is most common; some routers use WAN_ or ppp0_ prefix.
-    const wanRx =
-      parseNetBytes(nd.INTERNET_rx) ||
-      parseNetBytes(nd.WAN_rx)      ||
-      parseNetBytes(nd.wan_rx)      ||
-      parseNetBytes(nd.ppp0_rx)     || 0;
-
-    const wanTx =
-      parseNetBytes(nd.INTERNET_tx) ||
-      parseNetBytes(nd.WAN_tx)      ||
-      parseNetBytes(nd.wan_tx)      ||
-      parseNetBytes(nd.ppp0_tx)     || 0;
-
-    return { wanRx, wanTx };
+    // Fallback for firmware that returns valid JSON with flat INTERNET_rx keys
+    try {
+      const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const nd   = data.netdev || data;
+      const parseNetBytes = (val) => {
+        if (val == null || val === '') return 0;
+        const s = String(val).trim();
+        if (s.startsWith('0x') || s.startsWith('0X')) return parseInt(s, 16) || 0;
+        return parseFloat(s) || 0;
+      };
+      const internet = nd.INTERNET || {};
+      return {
+        wanRx: parseNetBytes(internet.rx) || parseNetBytes(nd.INTERNET_rx) || parseNetBytes(nd.WAN_rx) || 0,
+        wanTx: parseNetBytes(internet.tx) || parseNetBytes(nd.INTERNET_tx) || parseNetBytes(nd.WAN_tx) || 0,
+      };
+    } catch (_) {
+      return { wanRx: 0, wanTx: 0 };
+    }
   }
 
   /** Returns raw netdev(appobj) response — used by the debug endpoint. */

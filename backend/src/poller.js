@@ -6,7 +6,7 @@ const db = require('./db');
 const POLL_INTERVAL_MS = 2000;     // Real-time poll: every 2s
 const HISTORY_INTERVAL_MS = 60000;  // Write history: every 60s
 const RATE_SMOOTH_SAMPLES = 2;     // 2-sample smoothing (~4s) — minimal noise reduction
-const WAN_POLL_EVERY = 5;          // Poll WAN stats every 5 polls (~10s)
+const WAN_POLL_EVERY = 1;          // Poll WAN every cycle (~2s) — it's the most accurate real-time signal
 
 class Poller {
   constructor(config, emitter) {
@@ -14,10 +14,10 @@ class Poller {
     this.emit = emitter;
     this.running = false;
 
-    // Session tracking: remember the first totalRx we saw for each device, so
-    // "Total Downloaded" shows bytes since RouterHub started watching this device
-    // — NOT the router's lifetime counter (which is always much larger).
-    this._sessionBase   = {};     // mac → { baseRx, baseTx }
+    // Session totals: this firmware returns empty totalRx/totalTx for every client,
+    // so we can't diff cumulative counters. Integrate smoothed rates over time
+    // (rate × dt) to estimate bytes-since-RouterHub-started per device.
+    this._sessionTotals = {};     // mac → { rx, tx, lastTs }
     this._rateBuffer    = {};     // mac → { rx: number[], tx: number[] }
     this._accumulator   = {};     // mac → { rxRates[], txRates[], rxBytes, txBytes }
     this._prevBytes     = {};     // mac → { rx, tx, ts } — for rate fallback when curRx=0
@@ -119,26 +119,24 @@ class Poller {
   // ─── Per-device rate computation ─────────────────────────────────────────────
 
   /**
-   * RATES: use the router's own curRx/curTx directly.
-   *   These are the same values shown in the router's Traffic Analyzer UI,
-   *   so RouterHub's per-device rates match the router's display by construction.
-   *   Only fall back to totalRx diff when curRx/curTx aren't provided.
+   * RATES: use the router's own curRx/curTx directly — same values as the
+   *   router's Traffic Analyzer UI. NOTE: ASUS TA samples on a slow internal
+   *   cycle, so per-device peaks are damped (a 4K stream may show as ~1 Mbps
+   *   instead of 15–25 Mbps). The true real-time internet throughput comes
+   *   from WAN byte-counter diffs (see _pollWan), which is what the user sees
+   *   in the "Internet (WAN)" row.
    *
-   * TOTALS: show delta since RouterHub first saw the device — NOT the router's
-   *   lifetime counter. The router's counter accumulates since the device first
-   *   connected (or Traffic Analyzer was enabled), which is always much larger
-   *   than what the user expects from any rolling-window view in the router UI.
+   * TOTALS: this firmware returns empty totalRx/totalTx per client, so we
+   *   integrate smoothed rates over time (rate × dt) to get session totals.
    */
   _computeRates(client, now) {
-    const mac = client.mac;
+    const mac  = client.mac;
     const prev = this._prevBytes[mac];
 
-    // ── Rates: trust the router's curRx/curTx (matches router UI) ──
     let rxRate = client.curRx || 0;
     let txRate = client.curTx || 0;
 
-    // Fallback only when the router doesn't provide curRx/curTx — derive from
-    // the cumulative counter diff over the 2s poll interval.
+    // Fallback only if firmware exposes totalRx/totalTx (this one doesn't)
     if (rxRate === 0 && txRate === 0 && client.totalRx > 0 && prev) {
       const dt = (now - prev.ts) / 1000;
       if (dt > 0) {
@@ -146,31 +144,9 @@ class Poller {
         txRate = Math.max(0, (client.totalTx - prev.tx) / dt);
       }
     }
-
     this._prevBytes[mac] = { rx: client.totalRx, tx: client.totalTx, ts: now };
 
-    // ── Totals: delta since RouterHub started watching this device ──
-    if (!this._sessionBase[mac]) {
-      this._sessionBase[mac] = {
-        baseRx: client.totalRx || 0,
-        baseTx: client.totalTx || 0,
-      };
-    }
-    const base = this._sessionBase[mac];
-
-    // Detect counter reset (device reconnected or router rebooted) and rebase
-    if (client.totalRx > 0 && client.totalRx < base.baseRx) {
-      base.baseRx = client.totalRx;
-      base.baseTx = client.totalTx;
-    }
-
-    let totalRx = 0, totalTx = 0;
-    if (client.totalRx > 0) {
-      totalRx = Math.max(0, client.totalRx - base.baseRx);
-      totalTx = Math.max(0, client.totalTx - base.baseTx);
-    }
-
-    // ── Light smoothing for display stability only ──
+    // Smoothing
     if (!this._rateBuffer[mac]) this._rateBuffer[mac] = { rx: [], tx: [] };
     const buf = this._rateBuffer[mac];
     buf.rx.push(rxRate);
@@ -180,14 +156,26 @@ class Poller {
     const smoothRx = buf.rx.reduce((a, b) => a + b, 0) / buf.rx.length;
     const smoothTx = buf.tx.reduce((a, b) => a + b, 0) / buf.tx.length;
 
+    // Integrate smoothed rates into session totals (bytes since RouterHub started)
+    if (!this._sessionTotals[mac]) {
+      this._sessionTotals[mac] = { rx: 0, tx: 0, lastTs: now };
+    }
+    const st = this._sessionTotals[mac];
+    const dt = (now - st.lastTs) / 1000;
+    if (dt > 0 && dt < 30) { // skip long gaps (device offline, clock jump)
+      st.rx += smoothRx * dt;
+      st.tx += smoothTx * dt;
+    }
+    st.lastTs = now;
+
     return {
       ...client,
       rxRate: smoothRx,
       txRate: smoothTx,
       rawRxRate: rxRate,
       rawTxRate: txRate,
-      totalRx,
-      totalTx,
+      totalRx: st.rx,
+      totalTx: st.tx,
     };
   }
 

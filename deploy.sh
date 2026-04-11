@@ -75,9 +75,9 @@ echo "==> Starting new container..."
 sudo docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
+  --network host \
   --env-file "$APP_DIR/.env" \
   -v "$DATA_DIR:/app/data" \
-  -p 3011:3001 \
   "$IMAGE_NAME"
 
 echo ""

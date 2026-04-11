@@ -3,15 +3,25 @@ import clsx from 'clsx';
 import SparkChart from './SparkChart';
 import { formatRate, formatBytes } from '../utils/formatBytes';
 
-const TYPE_LABEL = { '0': 'Wired', '1': '2.4 GHz', '2': '5 GHz', '3': '6 GHz' };
+const TYPE_LABEL = {
+  '0': 'Wired',
+  '1': '2.4 GHz',
+  '2': '5 GHz',
+  '3': '6 GHz',
+  '4': '5 GHz-2',   // second 5 GHz radio on some firmware
+  '5': 'Mesh',
+};
 const TYPE_COLOR = {
   '0': 'text-slate-400 bg-slate-800/60 border-slate-700/50',
   '1': 'text-yellow-400 bg-yellow-400/10 border-yellow-500/20',
   '2': 'text-blue-400 bg-blue-400/10 border-blue-500/20',
   '3': 'text-violet-400 bg-violet-400/10 border-violet-500/20',
+  '4': 'text-cyan-400 bg-cyan-400/10 border-cyan-500/20',
+  '5': 'text-emerald-400 bg-emerald-400/10 border-emerald-500/20',
 };
 const TYPE_ICON_COLOR = {
-  '0': 'text-slate-400', '1': 'text-yellow-400', '2': 'text-blue-400', '3': 'text-violet-400',
+  '0': 'text-slate-400', '1': 'text-yellow-400', '2': 'text-blue-400',
+  '3': 'text-violet-400', '4': 'text-cyan-400', '5': 'text-emerald-400',
 };
 
 function DeviceIcon({ type }) {

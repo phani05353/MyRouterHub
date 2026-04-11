@@ -252,7 +252,7 @@ export default function DeviceDetail({ client, history, onClose }) {
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Connection</span>
               <span className="font-mono text-slate-200">
-                {{ '0': 'Wired', '1': '2.4 GHz Wi-Fi', '2': '5 GHz Wi-Fi', '3': '6 GHz Wi-Fi' }[client.type] || 'Unknown'}
+                {{ '0': 'Wired', '1': '2.4 GHz Wi-Fi', '2': '5 GHz Wi-Fi', '3': '6 GHz Wi-Fi', '4': '5 GHz-2 Wi-Fi', '5': 'Mesh Backhaul' }[client.type] || `Type ${client.type}`}
               </span>
             </div>
           </div>

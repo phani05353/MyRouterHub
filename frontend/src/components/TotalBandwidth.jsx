@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { formatRate } from '../utils/formatBytes';
 
@@ -23,9 +23,20 @@ export default function TotalBandwidth({ clients, history, wanRates }) {
   const totalRx = clients.reduce((s, c) => s + (c.rxRate || 0), 0);
   const totalTx = clients.reduce((s, c) => s + (c.txRate || 0), 0);
   const activeDevices = clients.filter((c) => (c.rxRate || 0) + (c.txRate || 0) > 1024).length;
-  const wanRx = wanRates?.rxRate || 0;
-  const wanTx = wanRates?.txRate || 0;
+  // wanRates is null until the first 'wan' socket event arrives
+  const wanRx = wanRates?.rxRate ?? 0;
+  const wanTx = wanRates?.txRate ?? 0;
   const hasWan = wanRx > 0 || wanTx > 0;
+
+  // Show "updating…" while waiting for the first WAN event; "N/A" after 30s timeout
+  const [wanWaiting, setWanWaiting] = useState(true);
+  useEffect(() => {
+    if (wanRates !== null) setWanWaiting(false);
+  }, [wanRates]);
+  useEffect(() => {
+    const t = setTimeout(() => setWanWaiting(false), 30000);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="bg-surface-card border border-surface-border rounded-2xl p-4 overflow-hidden relative">
@@ -62,11 +73,19 @@ export default function TotalBandwidth({ clients, history, wanRates }) {
             </svg>
             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Internet (WAN)</span>
           </div>
-          <div className="flex items-baseline gap-3 font-mono text-sm">
-            <span className={hasWan ? 'text-rx' : 'text-slate-600'}>↓ {formatRate(wanRx)}</span>
-            <span className={hasWan ? 'text-tx' : 'text-slate-600'}>↑ {formatRate(wanTx)}</span>
-          </div>
-          {!hasWan && <span className="text-[10px] text-slate-600 italic ml-auto">updating…</span>}
+          {wanWaiting ? (
+            <span className="text-[10px] text-slate-600 italic">updating…</span>
+          ) : hasWan ? (
+            <div className="flex items-baseline gap-3 font-mono text-sm">
+              <span className="text-rx">↓ {formatRate(wanRx)}</span>
+              <span className="text-tx">↑ {formatRate(wanTx)}</span>
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-3 font-mono text-sm">
+              <span className="text-slate-500">↓ {formatRate(wanRx)}</span>
+              <span className="text-slate-500">↑ {formatRate(wanTx)}</span>
+            </div>
+          )}
         </div>
 
         {/* Chart */}

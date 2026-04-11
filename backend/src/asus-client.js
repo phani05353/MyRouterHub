@@ -274,10 +274,36 @@ class AsusClient {
   async getNetDev() {
     const data = await this.appGet('netdev(appobj)');
     const nd = data.netdev || data;
-    return {
-      wanRx: parseFloat(nd.INTERNET_rx) || parseFloat(nd.wan_rx) || 0,
-      wanTx: parseFloat(nd.INTERNET_tx) || parseFloat(nd.wan_tx) || 0,
-    };
+
+    // Some firmware returns values as decimal strings, others as hex ("0x7a3b...").
+    // parseFloat("0x1234") = 0 in JS — must handle hex explicitly.
+    function parseNetBytes(val) {
+      if (val == null || val === '') return 0;
+      const s = String(val).trim();
+      if (s.startsWith('0x') || s.startsWith('0X')) return parseInt(s, 16) || 0;
+      return parseFloat(s) || 0;
+    }
+
+    // Try all field name conventions seen across ASUS firmware versions.
+    // INTERNET_rx/tx is most common; some routers use WAN_ or ppp0_ prefix.
+    const wanRx =
+      parseNetBytes(nd.INTERNET_rx) ||
+      parseNetBytes(nd.WAN_rx)      ||
+      parseNetBytes(nd.wan_rx)      ||
+      parseNetBytes(nd.ppp0_rx)     || 0;
+
+    const wanTx =
+      parseNetBytes(nd.INTERNET_tx) ||
+      parseNetBytes(nd.WAN_tx)      ||
+      parseNetBytes(nd.wan_tx)      ||
+      parseNetBytes(nd.ppp0_tx)     || 0;
+
+    return { wanRx, wanTx };
+  }
+
+  /** Returns raw netdev(appobj) response — used by the debug endpoint. */
+  async getNetDevRaw() {
+    return this.appGet('netdev(appobj)');
   }
 
   async getTrafficMeter() {

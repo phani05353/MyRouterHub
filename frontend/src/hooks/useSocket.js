@@ -37,7 +37,7 @@ export function useSocket() {
   const historyRef  = useRef({});
   const [history, setHistory] = useState({});
   const seenMacs    = useRef(new Set());
-  const [wanRates, setWanRates] = useState({ rxRate: 0, txRate: 0 });
+  const [wanRates, setWanRates] = useState(null); // null until first 'wan' event
 
   const pushHistory = useCallback((clientList) => {
     const now = Date.now();

@@ -46,4 +46,23 @@ router.get('/clients', async (req, res) => {
   }
 });
 
+// GET /api/debug/netdev
+// Returns the raw netdev(appobj) response — use this to diagnose WAN field names.
+router.get('/netdev', async (req, res) => {
+  const client = new AsusClient({
+    ip:       process.env.ROUTER_IP       || '192.168.50.1',
+    username: process.env.ROUTER_USER     || 'admin',
+    password: process.env.ROUTER_PASS     || 'admin',
+    protocol: process.env.ROUTER_PROTOCOL || 'http',
+  });
+
+  try {
+    const raw    = await client.getNetDevRaw();
+    const parsed = await client.getNetDev();
+    res.json({ raw, parsed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -234,6 +234,16 @@ class AsusClient {
           // If no online field at all but the entry exists in the maclist, assume online
           (c.isOnline === undefined && c.online === undefined && c.status === undefined && !!c.ip);
 
+        // Determine connection type from rssi:
+        //   rssi is a negative dBm value for wireless devices (e.g. "-65")
+        //   rssi is empty or "0" for wired devices
+        const rssiVal = parseFloat(c.rssi);
+        const isWireless = rssiVal < 0;
+        const node = c.associatedNode || c.aimesh_node || '';
+        let connectionType = 'wired';
+        if (node && !isWireless) connectionType = 'mesh';
+        else if (isWireless)     connectionType = 'wifi';
+
         seen.set(mac, {
           mac,
           ip:      c.ip      || '',
@@ -249,9 +259,10 @@ class AsusClient {
           totalRx: (parseFloat(c.totalTx) || 0) * 1024,
           totalTx: (parseFloat(c.totalRx) || 0) * 1024,
           vendor:  c.vendor || '',
-          type:    c.type   || '0',  // '0'=wired '1'=2.4G '2'=5G '3'=6G
+          connectionType,           // 'wired' | 'wifi' | 'mesh'
+          type:    c.type   || '0', // ASUS device category code (not band)
           rssi:    c.rssi   || '',
-          node:    c.associatedNode || c.aimesh_node || '', // mesh node MAC
+          node,
         });
       }
     }

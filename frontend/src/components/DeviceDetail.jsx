@@ -193,7 +193,7 @@ export default function DeviceDetail({ client, history, onClose }) {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  {client.type === '0'
+                  {client.connectionType === 'wired'
                     ? <><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4" strokeLinecap="round"/></>
                     : <path strokeLinecap="round" d="M12 18.5h.01M8.5 15.5a5 5 0 017 0M5.5 12.5a9.5 9.5 0 0113 0M2.5 9.5a14 14 0 0119 0"/>
                   }
@@ -252,7 +252,7 @@ export default function DeviceDetail({ client, history, onClose }) {
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Connection</span>
               <span className="font-mono text-slate-200">
-                {{ '0': 'Wired', '1': '2.4 GHz Wi-Fi', '2': '5 GHz Wi-Fi', '3': '6 GHz Wi-Fi', '4': '5 GHz-2 Wi-Fi', '5': 'Mesh Backhaul' }[client.type] || `Type ${client.type}`}
+                {{ wired: 'Wired', wifi: 'Wi-Fi', mesh: 'Mesh' }[client.connectionType] || 'Wired'}
               </span>
             </div>
           </div>

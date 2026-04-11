@@ -3,29 +3,24 @@ import clsx from 'clsx';
 import SparkChart from './SparkChart';
 import { formatRate, formatBytes } from '../utils/formatBytes';
 
-const TYPE_LABEL = {
-  '0': 'Wired',
-  '1': '2.4 GHz',
-  '2': '5 GHz',
-  '3': '6 GHz',
-  '4': '5 GHz-2',   // second 5 GHz radio on some firmware
-  '5': 'Mesh',
+const CONN_LABEL = {
+  wired: 'Wired',
+  wifi:  'Wi-Fi',
+  mesh:  'Mesh',
 };
-const TYPE_COLOR = {
-  '0': 'text-slate-400 bg-slate-800/60 border-slate-700/50',
-  '1': 'text-yellow-400 bg-yellow-400/10 border-yellow-500/20',
-  '2': 'text-blue-400 bg-blue-400/10 border-blue-500/20',
-  '3': 'text-violet-400 bg-violet-400/10 border-violet-500/20',
-  '4': 'text-cyan-400 bg-cyan-400/10 border-cyan-500/20',
-  '5': 'text-emerald-400 bg-emerald-400/10 border-emerald-500/20',
+const CONN_COLOR = {
+  wired: 'text-slate-400 bg-slate-800/60 border-slate-700/50',
+  wifi:  'text-blue-400 bg-blue-400/10 border-blue-500/20',
+  mesh:  'text-emerald-400 bg-emerald-400/10 border-emerald-500/20',
 };
-const TYPE_ICON_COLOR = {
-  '0': 'text-slate-400', '1': 'text-yellow-400', '2': 'text-blue-400',
-  '3': 'text-violet-400', '4': 'text-cyan-400', '5': 'text-emerald-400',
+const CONN_ICON_COLOR = {
+  wired: 'text-slate-400',
+  wifi:  'text-blue-400',
+  mesh:  'text-emerald-400',
 };
 
 function DeviceIcon({ type }) {
-  if (type === '0') {
+  if (type === 'wired') {
     return (
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -84,10 +79,10 @@ export default function DeviceCard({ client, history, onClick, pinned, onToggleP
           <div className="flex items-center gap-2.5 min-w-0">
             <span className={clsx(
               'shrink-0 p-1.5 rounded-lg',
-              TYPE_ICON_COLOR[client.type] || 'text-slate-400',
+              CONN_ICON_COLOR[client.connectionType] || 'text-slate-400',
               'bg-surface-muted/60'
             )}>
-              <DeviceIcon type={client.type} />
+              <DeviceIcon type={client.connectionType} />
             </span>
             <div className="min-w-0">
               <p className="font-semibold truncate text-sm text-slate-100 group-hover:text-brand transition-colors">
@@ -99,9 +94,9 @@ export default function DeviceCard({ client, history, onClick, pinned, onToggleP
 
           <span className={clsx(
             'shrink-0 ml-2 text-[10px] px-2 py-0.5 rounded-full border font-medium',
-            TYPE_COLOR[client.type] || TYPE_COLOR['0']
+            CONN_COLOR[client.connectionType] || CONN_COLOR.wired
           )}>
-            {TYPE_LABEL[client.type] || 'Unknown'}
+            {CONN_LABEL[client.connectionType] || 'Wired'}
           </span>
         </div>
 

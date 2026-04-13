@@ -249,16 +249,18 @@ class AsusClient {
           ip:      c.ip      || '',
           name:    c.nickName || c.name || c.dpiDevice || c.ip || mac,
           isOnline: online,
-          // ASUS Traffic Analyzer uses DEVICE-centric naming:
-          //   curRx = bytes the device receives = device download
-          //   curTx = bytes the device transmits = device upload
-          // (Confirmed: Nest camera shows curTx≫curRx, which matches upload-heavy behavior.)
+          // ASUS TA uses ROUTER-centric naming:
+          //   curRx = router receives FROM device = device upload
+          //   curTx = router transmits TO device  = device download
+          // Swap so our curRx = device download, curTx = device upload.
+          // Confirmed by Samsung TV 7-day totals: 8.4 GB actual download,
+          // 1.3 GB actual upload — only correct with this swap applied.
           // Convert Kbps → bytes/s: × 1000 ÷ 8 = × 125
-          curRx:   (parseFloat(c.curRx)   || 0) * 125,  // device download
-          curTx:   (parseFloat(c.curTx)   || 0) * 125,  // device upload
-          // totalRx/totalTx are in KB — always empty on ZenWiFi AX6600 firmware
-          totalRx: (parseFloat(c.totalRx) || 0) * 1024,
-          totalTx: (parseFloat(c.totalTx) || 0) * 1024,
+          curRx:   (parseFloat(c.curTx)   || 0) * 125,  // device download
+          curTx:   (parseFloat(c.curRx)   || 0) * 125,  // device upload
+          // totalRx/totalTx always empty on ZenWiFi AX6600 — swapped for consistency
+          totalRx: (parseFloat(c.totalTx) || 0) * 1024,
+          totalTx: (parseFloat(c.totalRx) || 0) * 1024,
           vendor:  c.vendor || '',
           connectionType,           // 'wired' | 'wifi' | 'mesh'
           type:    c.type   || '0', // ASUS device category code (not band)
